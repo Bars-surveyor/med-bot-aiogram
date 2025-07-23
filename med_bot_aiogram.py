@@ -23,6 +23,7 @@ import schedule
 # --- КОНФІГУРАЦІЯ ---
 DATABASE_NAME = 'health_log.db'
 PRIVACY_POLICY_URL = "https://telegra.ph/Pol%D1%96tika-konf%D1%96denc%D1%96jnost%D1%96-dlya-medichnogo-pom%D1%96chnika-med-pomichnyk-bot-07-22-2" # Приклад, замініть на своє посилання
+ANALYZE_BTN_TEXT = "🤔 Проаналізувати симптоми (AI)"
 
 # Ініціалізація роутера
 router = Router()
@@ -355,8 +356,9 @@ async def on_startup(bot: Bot):
 def get_main_menu_keyboard(user_id: int):
     profile, is_female = get_user_profile(user_id), False
     if profile and profile[2] and profile[2].lower() in ['жіноча', 'female']: is_female = True
+    
     keyboard = [
-        [KeyboardButton(text="🤔 Проаналізувати симптоми (AI)")],
+        [KeyboardButton(text=ANALYZE_BTN_TEXT)], # <-- Змінено тут
         [KeyboardButton(text="☀️ Щоденний Check-in"), KeyboardButton(text="📝 Швидкий запис")],
         [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="💊 Мої ліки")],
         [KeyboardButton(text="📖 Переглянути історію"), KeyboardButton(text="📄 Створити звіт")]
@@ -486,6 +488,8 @@ async def view_history(message: Message):
 async def ask_for_note(message: Message, state: FSMContext):
     await state.set_state(Form.waiting_for_note)
     await message.answer("Введіть вашу нотатку. Вона буде збережена з поточною датою і часом.", reply_markup=cancel_keyboard)
+    
+    
 
 @router.message(Form.waiting_for_note)
 async def process_note(message: Message, state: FSMContext):
@@ -494,17 +498,19 @@ async def process_note(message: Message, state: FSMContext):
     await message.answer("✅ Нотатку збережено.", reply_markup=get_main_menu_keyboard(message.from_user.id))
     await award_achievement(message.from_user.id, 'FIRST_NOTE', message)
     
-# !!! ДІАГНОСТИЧНИЙ ОБРОБНИК - ВСТАВТЕ В САМИЙ КІНЕЦЬ ФАЙЛУ !!!
-@router.message()
-async def catch_all_unhandled_messages(message: Message, state: FSMContext):
-    """
-    Цей хендлер ловить ВСІ текстові повідомлення, які не були оброблені
-    іншими хендлерами, і показує поточний стан бота.
-    """
-    current_state = await state.get_state()
+# ... після хендлера process_note ...
+
+@router.message(F.text == ANALYZE_BTN_TEXT)
+async def start_symptom_checker(message: Message, state: FSMContext):
+    await state.set_state(Form.symptom_checker_start)
     await message.answer(
-        f"<b>Діагностичне повідомлення:</b>\n\n"
-        f"Отримано текст: «<code>{message.text}</code>»\n"
-        f"Поточний стан бота: <b>{current_state}</b>"
+        "Оберіть основний симптом або опишіть його:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤯 Головний біль", callback_data="symptom:headache")],
+            [InlineKeyboardButton(text="🤒 Біль у горлі", callback_data="symptom:sore_throat")],
+            [InlineKeyboardButton(text="📝 Інше (описати текстом)", callback_data="symptom:other")]
+        ])
     )
 
+# ... тут починаються інші хендлери ...
+    
