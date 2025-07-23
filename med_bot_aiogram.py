@@ -462,13 +462,16 @@ async def process_checkin_water(message: Message, state: FSMContext):
     if new_streak >= 5: await award_achievement(message.from_user.id, 'STREAK_5_DAYS', message)
 
 # ... (решта хендлерів, що залишились, копіюються сюди)
+# med_bot_aiogram.py
+
 @router.message(F.text == "📖 Переглянути історію")
 async def view_history(message: Message):
     if not (history := get_user_history(message.from_user.id)): return await message.answer("Ваша історія записів порожня.")
     response = "**Останні записи про здоров'я:**\n\n"
     for record in history:
         timestamp, mood, sleep, note, activity, stress, water = record
-        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
+        # ↓↓↓ ВИПРАВЛЕНО ТУТ (прибрали .%f) ↓↓↓
+        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
         response += f"🗓️ **{dt_object.strftime('%d-%m-%y %H:%M')}**\n"
         if note: response += f"   - 📝 Нотатка: {note}\n"
         if mood: response += f"   - Настрій: {mood}\n"
