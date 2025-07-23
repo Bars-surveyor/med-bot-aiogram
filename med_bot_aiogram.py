@@ -493,4 +493,18 @@ async def process_note(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("✅ Нотатку збережено.", reply_markup=get_main_menu_keyboard(message.from_user.id))
     await award_achievement(message.from_user.id, 'FIRST_NOTE', message)
+    
+# !!! ДІАГНОСТИЧНИЙ ОБРОБНИК - ВСТАВТЕ В САМИЙ КІНЕЦЬ ФАЙЛУ !!!
+@router.message()
+async def catch_all_unhandled_messages(message: Message, state: FSMContext):
+    """
+    Цей хендлер ловить ВСІ текстові повідомлення, які не були оброблені
+    іншими хендлерами, і показує поточний стан бота.
+    """
+    current_state = await state.get_state()
+    await message.answer(
+        f"<b>Діагностичне повідомлення:</b>\n\n"
+        f"Отримано текст: «<code>{message.text}</code>»\n"
+        f"Поточний стан бота: <b>{current_state}</b>"
+    )
 
