@@ -49,7 +49,6 @@ class Form(StatesGroup):
     add_med_schedule = State()
     checkin_mood = State()
     checkin_sleep = State()
-    # Нові стани для Check-in
     checkin_activity = State()
     checkin_stress = State()
     checkin_water = State()
@@ -59,7 +58,6 @@ class Form(StatesGroup):
 def setup_database():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
-    # Створення основних таблиць
     cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, age INTEGER, gender TEXT, weight_kg REAL, height_cm REAL)")
     cursor.execute("CREATE TABLE IF NOT EXISTS health_entries (entry_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, mood TEXT, sleep_quality TEXT, systolic_pressure INTEGER, diastolic_pressure INTEGER, FOREIGN KEY (user_id) REFERENCES users(user_id))")
     cursor.execute("CREATE TABLE IF NOT EXISTS medications (med_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, med_name TEXT NOT NULL, dosage TEXT, schedule TEXT, is_active BOOLEAN DEFAULT 1, FOREIGN KEY (user_id) REFERENCES users(user_id))")
@@ -67,7 +65,6 @@ def setup_database():
     cursor.execute("CREATE TABLE IF NOT EXISTS openai_interactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, prompt TEXT, response TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS cycles (cycle_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, start_date DATE, end_date DATE, FOREIGN KEY (user_id) REFERENCES users(user_id))")
 
-    # Додавання нових полів через ALTER TABLE, ігноруючи помилки, якщо вони вже існують
     try: cursor.execute("ALTER TABLE users ADD COLUMN checkin_streak INTEGER DEFAULT 0")
     except: pass
     try: cursor.execute("ALTER TABLE users ADD COLUMN last_checkin_date DATE")
@@ -82,7 +79,6 @@ def setup_database():
     except: pass
     try: cursor.execute("ALTER TABLE users ADD COLUMN emergency_contact TEXT")
     except: pass
-    # Нові поля для Check-in
     try: cursor.execute("ALTER TABLE health_entries ADD COLUMN activity_level TEXT")
     except: pass
     try: cursor.execute("ALTER TABLE health_entries ADD COLUMN stress_level TEXT")
@@ -90,7 +86,6 @@ def setup_database():
     try: cursor.execute("ALTER TABLE health_entries ADD COLUMN water_intake TEXT")
     except: pass
 
-    # Створення та заповнення таблиць для гейміфікації
     cursor.execute("CREATE TABLE IF NOT EXISTS achievements (code TEXT PRIMARY KEY, name TEXT, description TEXT, icon TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS user_achievements (user_id INTEGER, achievement_code TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, achievement_code), FOREIGN KEY (user_id) REFERENCES users(user_id), FOREIGN KEY (achievement_code) REFERENCES achievements(code))")
     achievements_data = [('FIRST_REPORT', 'Перший звіт', 'Ви згенерували свій перший звіт для лікаря.', '📄'), ('STREAK_5_DAYS', 'Стабільність', 'Ви ведете щоденник 5 днів поспіль.', '🔥'), ('FIRST_NOTE', 'Нотатки', 'Ви зробили свій перший швидкий запис.', '✍️')]
@@ -100,7 +95,6 @@ def setup_database():
     conn.close()
     logging.info("Базу даних перевірено та налаштовано.")
 
-# --- Функції для роботи з БД ---
 def create_or_update_user(user_id: int, first_name: str):
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
@@ -129,7 +123,7 @@ def save_health_entry(user_id, **kwargs):
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     valid_keys = ['mood', 'sleep_quality', 'note', 'activity_level', 'stress_level', 'water_intake']
-    filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys and v is not None}
     if not filtered_kwargs: return
     columns = ', '.join(filtered_kwargs.keys())
     placeholders = ', '.join('?' * len(filtered_kwargs))
@@ -166,7 +160,14 @@ async def award_achievement(user_id: int, achievement_code: str, message: Messag
         conn.close()
         if ach:
             await message.answer(f"{ach[1]} Досягнення отримано: **{ach[0]}**!")
-# ... (решта функцій БД: add_medication, get_user_medications і т.д. залишаються без змін) ...
+# ... (інші функції БД) ...
+def add_medication(user_id: int, name: str, dosage: str, schedule: str):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO medications (user_id, med_name, dosage, schedule) VALUES (?, ?, ?, ?)", (user_id, name, dosage, schedule))
+    conn.commit()
+    conn.close()
+
 def get_user_medications(user_id: int):
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
@@ -233,60 +234,21 @@ def get_cycle_predictions(user_id: int):
 def generate_daily_recommendation(data: dict) -> str:
     recommendations = []
     if data.get("stress_level") == "Високий":
-        recommendations.append("Високий рівень стресу. Спробуйте знайти 10-15 хвилин для короткої прогулянки або дихальних вправ, щоб розслабитися.")
+        recommendations.append("Високий рівень стресу. Спробуйте знайти 10-15 хвилин для короткої прогулянки або дихальних вправ.")
     if data.get("activity_level") == "Низька":
-        recommendations.append("Низька активність сьогодні. Навіть коротка 20-хвилинна прогулянка може значно покращити ваше самопочуття.")
+        recommendations.append("Низька активність сьогодні. Навіть коротка 20-хвилинна прогулянка може значно покращити самопочуття.")
     if data.get("mood") == "😞 Поганий" and data.get("activity_level") == "Низька":
-        recommendations.append("Іноді фізична активність допомагає покращити настрій. Можливо, невелика прогулянка буде корисною.")
+        recommendations.append("Іноді фізична активність допомагає покращити настрій.")
     if "погано" in data.get("sleep_quality", "").lower() or "мало" in data.get("sleep_quality", "").lower():
-        recommendations.append("Поганий сон впливає на весь день. Спробуйте провітрити кімнату перед сном і відкласти телефон за годину до засинання.")
+        recommendations.append("Поганий сон впливає на весь день. Спробуйте провітрити кімнату і відкласти телефон за годину до сну.")
     if data.get("water_intake") == "Менше 1 літра":
         recommendations.append("Не забувайте пити достатньо води протягом дня. Це важливо для енергії та концентрації.")
     if not recommendations:
         return "✨ Чудові показники сьогодні! Так тримати!"
     else:
-        return "💡 **Ось декілька порад на основі ваших сьогоднішніх записів:**\n\n- " + "\n- ".join(recommendations)
+        return "💡 **Ось декілька порад на основі ваших записів:**\n\n- " + "\n- ".join(recommendations)
 
-# --- Аналітика, звіти, планувальник ---
-# ... (код для аналітики, звітів, планувальника залишається без змін) ...
-def get_weekly_health_data(user_id: int):
-    conn = sqlite3.connect(DATABASE_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT timestamp, mood, systolic_pressure, diastolic_pressure FROM health_entries WHERE user_id = ? AND timestamp >= date('now', '-14 days') ORDER BY timestamp ASC", (user_id,))
-    data = cursor.fetchall()
-    conn.close()
-    return data
-
-def analyze_weekly_data(data: list):
-    if not data: return None
-    mood_scores = {"😊 Чудовий": 3, "😐 Нормальний": 2, "😞 Поганий": 1}
-    today = datetime.datetime.now()
-    last_week_data = [row for row in data if (today - datetime.datetime.strptime(row[0], '%Y-%m-%d %H:%M:%S.%f')).days < 7]
-    prev_week_data = [row for row in data if 7 <= (today - datetime.datetime.strptime(row[0], '%Y-%m-%d %H:%M:%S.%f')).days < 14]
-    if not last_week_data: return "На минулому тижні не було записів. Намагайтеся робити Check-in щодня, щоб отримувати аналітику."
-    
-    def get_avg_metrics(week_data):
-        moods = [mood_scores.get(r[1], 0) for r in week_data if r[1]]
-        pressures = [(r[2], r[3]) for r in week_data if r[2] and r[3]]
-        return (sum(moods) / len(moods) if moods else 0, sum(p[0] for p in pressures) / len(pressures) if pressures else 0, sum(p[1] for p in pressures) / len(pressures) if pressures else 0)
-
-    avg_mood_last, avg_sys_last, avg_dias_last = get_avg_metrics(last_week_data)
-    report_lines = ["**📊 Ваш звіт за минулий тиждень:**\n"]
-    if avg_mood_last > 0: report_lines.append(f"• Середній настрій: {'😊' if avg_mood_last > 2.5 else '😐' if avg_mood_last > 1.5 else '😞'}")
-    if avg_sys_last > 0: report_lines.append(f"• Середній тиск: {int(avg_sys_last)}/{int(avg_dias_last)}")
-    
-    if prev_week_data:
-        _, avg_sys_prev, _ = get_avg_metrics(prev_week_data)
-        if avg_sys_last > 0 and avg_sys_prev > 0 and abs(avg_sys_last - avg_sys_prev) > 3:
-             trend = "зріс" if avg_sys_last > avg_sys_prev else "знизився"
-             report_lines.append(f"• Ваш середній систолічний тиск **{trend}** порівняно з позаминулим тижнем.")
-    return "\n".join(report_lines)
-
-def create_pressure_graph(user_id: int, days: int = 30) -> str | None:
-    # Примітка: ця функція тепер не буде працювати, оскільки ми більше не збираємо тиск у Check-in
-    # Її потрібно буде або видалити, або адаптувати для нових даних (напр. графік настрою)
-    return None
-
+# --- Аналітика та звіти ---
 def generate_doctor_report_pdf(user_id: int) -> str:
     profile, history = get_user_profile(user_id), get_user_history(user_id)
     pdf = FPDF()
@@ -297,11 +259,10 @@ def generate_doctor_report_pdf(user_id: int) -> str:
     pdf.set_font('DejaVu', '', 12)
     pdf.cell(0, 10, f'Пацієнт: {profile[0] if profile else "N/A"}', 0, 1, 'C')
     pdf.cell(0, 10, f'Дата генерації: {datetime.date.today().strftime("%d-%m-%Y")}', 0, 1, 'C'), pdf.ln(10)
-
     pdf.set_font('DejaVu', '', 14), pdf.cell(0, 10, 'Останні записи:', 0, 1), pdf.set_font('DejaVu', '', 10)
     for record in history:
         timestamp, mood, sleep, note, activity, stress, water = record
-        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S.%f')
+        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
         line = f"{dt_object.strftime('%d-%m-%y %H:%M')}: "
         if note: line += f"Нотатка - {note}. "
         if mood: line += f"Настрій - {mood}. "
@@ -310,16 +271,14 @@ def generate_doctor_report_pdf(user_id: int) -> str:
         if stress: line += f"Стрес - {stress}. "
         if water: line += f"Вода - {water}. "
         pdf.multi_cell(0, 5, line)
-    
     filepath = f"report_{user_id}.pdf"
     pdf.output(filepath)
     return filepath
 
+# --- Планувальник та Startup ---
 async def send_weekly_report(bot: Bot, user_id: int):
-    logging.info(f"Генерація тижневого звіту для user_id={user_id}")
-    if report_text := analyze_weekly_data(get_weekly_health_data(user_id)):
-        try: await bot.send_message(user_id, report_text)
-        except Exception as e: logging.error(f"Не вдалося надіслати звіт користувачу {user_id}: {e}")
+    # Ця функція потребує оновлення для роботи з новими даними, поки що заглушка
+    logging.info(f"Спроба генерації тижневого звіту для user_id={user_id}")
 
 async def send_reminder(bot: Bot, user_id: int, med_id: int, med_name: str, dosage: str):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✅ Прийнято", callback_data=f"med_log:taken:{med_id}"), InlineKeyboardButton(text="❌ Пропущено", callback_data=f"med_log:skipped:{med_id}")]])
@@ -334,8 +293,7 @@ def schedule_reminders(bot: Bot):
     for user_id, med_id, med_name, dosage, schedule_str in cursor.fetchall():
         for t in re.findall(r"(\d{2}:\d{2})", schedule_str):
             schedule.every().day.at(t).do(lambda u=user_id, m_id=med_id, m_n=med_name, d=dosage: asyncio.create_task(send_reminder(bot, u, m_id, m_n, d)))
-    
-    cursor.execute("SELECT DISTINCT user_id FROM health_entries")
+    cursor.execute("SELECT DISTINCT user_id FROM users") # Розсилаємо всім, хто є в базі
     for user in cursor.fetchall():
         schedule.every().sunday.at("10:00").do(lambda u_id=user[0]: asyncio.create_task(send_weekly_report(bot, u_id)))
     conn.close()
@@ -351,14 +309,12 @@ async def on_startup(bot: Bot):
     asyncio.create_task(scheduler_loop(bot))
     logging.info("Бот запущено, базу даних налаштовано, планувальник активовано.")
 
-
-# --- Клавіатури та Хендлери ---
+# --- Клавіатури ---
 def get_main_menu_keyboard(user_id: int):
     profile, is_female = get_user_profile(user_id), False
     if profile and profile[2] and profile[2].lower() in ['жіноча', 'female']: is_female = True
-    
     keyboard = [
-        [KeyboardButton(text=ANALYZE_BTN_TEXT)], # <-- Змінено тут
+        [KeyboardButton(text=ANALYZE_BTN_TEXT)],
         [KeyboardButton(text="☀️ Щоденний Check-in"), KeyboardButton(text="📝 Швидкий запис")],
         [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="💊 Мої ліки")],
         [KeyboardButton(text="📖 Переглянути історію"), KeyboardButton(text="📄 Створити звіт")]
@@ -368,12 +324,12 @@ def get_main_menu_keyboard(user_id: int):
 
 cancel_keyboard = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="⬅️ Головне меню")]], resize_keyboard=True)
 
+# --- Обробники (Handlers) ---
 @router.message(F.text == "⬅️ Головне меню")
 async def back_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Дію скасовано. Ви повернулися в головне меню.", reply_markup=get_main_menu_keyboard(message.from_user.id))
 
-# ... (всі інші хендлери залишаються тут, але Check-in повністю замінено) ...
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
@@ -390,16 +346,137 @@ async def process_privacy_choice(callback: CallbackQuery, state: FSMContext):
 @router.message(Command("sos"))
 async def cmd_sos(message: Message):
     profile_data = get_user_profile(message.from_user.id)
-    if not profile_data: return await message.answer("Профіль не знайдено. Заповніть його через меню.")
+    if not profile_data: return await message.answer("Профіль не знайдено.")
     _, _, _, _, _, blood, allergies, chronic, contact = profile_data
-    sos_text = (f"**🚑 Ваша Екстрена картка:**\n\n"
-                f"**Група крові:** {blood or 'Не вказано'}\n"
-                f"**Алергії:** {allergies or 'Не вказано'}\n"
-                f"**Хронічні захворювання:** {chronic or 'Не вказано'}\n"
-                f"**Екстрений контакт:** {contact or 'Не вказано'}")
+    sos_text = (f"**🚑 Ваша Екстрена картка:**\n\n**Група крові:** {blood or 'Не вказано'}\n**Алергії:** {allergies or 'Не вказано'}\n**Хронічні захворювання:** {chronic or 'Не вказано'}\n**Екстрений контакт:** {contact or 'Не вказано'}")
     await message.answer(sos_text)
+    
+@router.message(F.text == "👤 Мій профіль")
+async def show_profile(message: Message, state: FSMContext):
+    profile_data = get_user_profile(message.from_user.id)
+    if not profile_data: return await message.answer("Помилка. Спробуйте /start")
+    name, age, gender, weight, height, _, _, _, _ = profile_data
+    profile_text = (f"**👤 Ваш профіль:**\n\nІм'я: {name}\nВік: {age or 'Не вказано'}\nСтать: {gender or 'Не вказано'}\nВага: {f'{weight} кг' if weight else 'Не вказано'}\nЗріст: {f'{height} см' if height else 'Не вказано'}")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ Редагувати профіль", callback_data="edit_profile")], [InlineKeyboardButton(text="🚑 Екстрена картка", callback_data="edit_emergency_card")]])
+    await message.answer(profile_text, reply_markup=keyboard)
 
-# --- НОВИЙ CHECK-IN ---
+@router.callback_query(F.data == "edit_emergency_card")
+async def edit_emergency_card_menu(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Група крові", callback_data="edit_field:blood_group")],[InlineKeyboardButton(text="Алергії", callback_data="edit_field:allergies")],[InlineKeyboardButton(text="Хронічні захворювання", callback_data="edit_field:chronic_diseases")],[InlineKeyboardButton(text="Екстрений контакт", callback_data="edit_field:emergency_contact")],[InlineKeyboardButton(text="⬅️ Назад до профілю", callback_data="back_to_profile")]])
+    await callback.message.edit_text("Що ви хочете змінити в екстреній картці?", reply_markup=keyboard)
+
+@router.callback_query(F.data == "edit_profile")
+async def edit_profile_menu(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Вік", callback_data="edit_field:age"), InlineKeyboardButton(text="Стать", callback_data="edit_field:gender")], [InlineKeyboardButton(text="Вага (кг)", callback_data="edit_field:weight_kg"), InlineKeyboardButton(text="Зріст (см)", callback_data="edit_field:height_cm")], [InlineKeyboardButton(text="⬅️ Назад до профілю", callback_data="back_to_profile")]])
+    await callback.message.edit_text("Що ви хочете змінити?", reply_markup=keyboard)
+
+@router.callback_query(F.data.startswith("edit_field:"))
+async def ask_for_field(callback: CallbackQuery, state: FSMContext):
+    field = callback.data.split(":")[1]
+    prompts = {"age": "Введіть ваш вік:", "gender": "Введіть вашу стать ('жіноча' або 'чоловіча'):", "weight_kg": "Введіть вашу вагу в кілограмах:", "height_cm": "Введіть ваш зріст в сантиметрах:", "blood_group": "Введіть вашу групу крові та резус-фактор (напр., 'A(II) Rh+'):", "allergies": "Перелічіть ваші алергії (напр., 'пеніцилін'):", "chronic_diseases": "Перелічіть ваші хронічні захворювання:", "emergency_contact": "Введіть ім'я та номер екстреного контакту:"}
+    await state.set_state(getattr(Form, f"edit_{field}"))
+    await state.update_data(field_to_edit=field)
+    await callback.message.answer(prompts.get(field, "Введіть нове значення:"), reply_markup=cancel_keyboard)
+    await callback.answer()
+
+async def process_field_update(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    field, value = user_data.get("field_to_edit"), message.text
+    if field in ['age', 'weight_kg', 'height_cm'] and not value.replace('.', '', 1).isdigit(): return await message.answer("Будь ласка, введіть числове значення.")
+    if field == 'gender' and value.lower() not in ['жіноча', 'чоловіча', 'female', 'male']: return await message.answer("Будь ласка, введіть 'жіноча' або 'чоловіча'.")
+    update_user_field(message.from_user.id, field, value)
+    await state.clear()
+    await message.answer("✅ Дані оновлено.", reply_markup=get_main_menu_keyboard(message.from_user.id))
+    await show_profile(message, state)
+
+for field_name in ["age", "gender", "weight_kg", "height_cm", "blood_group", "allergies", "chronic_diseases", "emergency_contact"]:
+    router.message.register(process_field_update, getattr(Form, f"edit_{field_name}"))
+
+@router.callback_query(F.data == "back_to_profile")
+async def back_to_profile_view(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await show_profile(callback.message, state)
+
+@router.message(F.text == "💊 Мої ліки")
+async def show_meds(message: Message, state: FSMContext):
+    meds = get_user_medications(message.from_user.id)
+    text = "**💊 Ваші ліки:**\n\n" if meds else "У вас немає доданих ліків."
+    if meds: text += "\n".join([f"• **{name}** ({dosage})\n   └ Розклад: {schedule} /del{med_id}" for med_id, name, dosage, schedule in meds])
+    await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="➕ Додати ліки", callback_data="add_medication")]]))
+
+@router.callback_query(F.data == "add_medication")
+async def add_med_start(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Form.add_med_name), await callback.message.answer("Введіть назву ліків:", reply_markup=cancel_keyboard), await callback.answer()
+
+@router.message(Form.add_med_name)
+async def process_med_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text), await state.set_state(Form.add_med_dosage), await message.answer("Тепер введіть дозування (напр., '1 таблетка', '50 mg'):", reply_markup=cancel_keyboard)
+
+@router.message(Form.add_med_dosage)
+async def process_med_dosage(message: Message, state: FSMContext):
+    await state.update_data(dosage=message.text), await state.set_state(Form.add_med_schedule), await message.answer("Введіть розклад у форматі HH:MM (через кому, напр., '09:00, 21:00'):", reply_markup=cancel_keyboard)
+
+@router.message(Form.add_med_schedule)
+async def process_med_schedule(message: Message, state: FSMContext, bot: Bot):
+    if not re.match(r"^\d{2}:\d{2}(,\s*\d{2}:\d{2})*$", message.text): return await message.answer("Неправильний формат. Введіть час як 'HH:MM'.")
+    data = await state.get_data()
+    add_medication(message.from_user.id, data['name'], data['dosage'], message.text)
+    await message.answer(f"✅ Ліки '{data['name']}' додано.", reply_markup=get_main_menu_keyboard(message.from_user.id))
+    await state.clear(), schedule_reminders(bot), await show_meds(message, state)
+
+@router.message(F.text.startswith("/del"))
+async def delete_med(message: Message, bot: Bot):
+    try: set_medication_inactive(int(message.text[4:]), message.from_user.id), await message.answer(f"Ліки видалено з активних."), schedule_reminders(bot)
+    except (ValueError, IndexError): await message.answer("Неправильний формат. Використовуйте /del<ID>.")
+
+@router.callback_query(F.data.startswith("med_log:"))
+async def log_med_status(callback: CallbackQuery):
+    _, status, med_id_str = callback.data.split(":")
+    log_medication_status(callback.from_user.id, int(med_id_str), status)
+    status_text = "Прийнято" if status == "taken" else "Пропущено"
+    await callback.message.edit_text(f"Відзначено: **{status_text}**"), await callback.answer(f"Статус оновлено: {status_text}")
+
+@router.message(F.text == "📝 Швидкий запис")
+async def ask_for_note(message: Message, state: FSMContext):
+    await state.set_state(Form.waiting_for_note)
+    await message.answer("Введіть вашу нотатку. Вона буде збережена з поточною датою і часом.", reply_markup=cancel_keyboard)
+
+@router.message(Form.waiting_for_note)
+async def process_note(message: Message, state: FSMContext):
+    save_health_entry(user_id=message.from_user.id, note=message.text)
+    await state.clear()
+    await message.answer("✅ Нотатку збережено.", reply_markup=get_main_menu_keyboard(message.from_user.id))
+    await award_achievement(message.from_user.id, 'FIRST_NOTE', message)
+
+@router.message(F.text == "📄 Створити звіт")
+async def cmd_create_report(message: Message):
+    await message.answer("Починаю готувати ваш звіт... ⏳")
+    try:
+        if report_path := generate_doctor_report_pdf(message.from_user.id):
+            await message.answer_document(types.FSInputFile(report_path), caption="Ваш звіт готовий.")
+            if os.path.exists(report_path): os.remove(report_path)
+            await award_achievement(message.from_user.id, 'FIRST_REPORT', message)
+        else: await message.answer("Недостатньо даних для створення звіту.")
+    except Exception as e:
+        logging.exception("Помилка при генерації звіту:"), await message.answer("Вибачте, сталася помилка.")
+
+@router.message(F.text == "📖 Переглянути історію")
+async def view_history(message: Message):
+    if not (history := get_user_history(message.from_user.id)): return await message.answer("Ваша історія записів порожня.")
+    response = "**Останні записи про здоров'я:**\n\n"
+    for record in history:
+        timestamp, mood, sleep, note, activity, stress, water = record
+        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+        response += f"🗓️ **{dt_object.strftime('%d-%m-%y %H:%M')}**\n"
+        if note: response += f"   - 📝 Нотатка: {note}\n"
+        if mood: response += f"   - Настрій: {mood}\n"
+        if sleep: response += f"   - Сон: {sleep}\n"
+        if activity: response += f"   - Активність: {activity}\n"
+        if stress: response += f"   - Стрес: {stress}\n"
+        if water: response += f"   - Вода: {water}\n"
+        response += "---\n"
+    await message.answer(response)
+
 @router.message(F.text == "☀️ Щоденний Check-in")
 async def start_checkin(message: Message, state: FSMContext):
     await state.set_state(Form.checkin_mood)
@@ -410,7 +487,7 @@ async def start_checkin(message: Message, state: FSMContext):
 async def process_checkin_mood(message: Message, state: FSMContext):
     await state.update_data(mood=message.text)
     await state.set_state(Form.checkin_sleep)
-    await message.answer("Як ви спали? (напр., '8 годин, добре' або 'погано')", reply_markup=cancel_keyboard)
+    await message.answer("Як ви спали? (напр., '8 годин, добре')", reply_markup=cancel_keyboard)
 
 @router.message(Form.checkin_sleep)
 async def process_checkin_sleep(message: Message, state: FSMContext):
@@ -438,7 +515,6 @@ async def process_checkin_water(message: Message, state: FSMContext):
     await state.update_data(water_intake=message.text)
     data = await state.get_data()
     save_health_entry(user_id=message.from_user.id, **data)
-    
     recommendation = generate_daily_recommendation(data)
     await message.answer(recommendation, reply_markup=get_main_menu_keyboard(message.from_user.id))
     
@@ -463,66 +539,90 @@ async def process_checkin_water(message: Message, state: FSMContext):
     if new_streak > 1: await message.answer(f"🔥 Ви ведете щоденник вже **{new_streak}** днів поспіль!")
     if new_streak >= 5: await award_achievement(message.from_user.id, 'STREAK_5_DAYS', message)
 
-# ... (решта хендлерів, що залишились, копіюються сюди)
-# med_bot_aiogram.py
+@router.message(F.text == "🌸 Жіноче здоров'я")
+async def show_cycle_menu(message: Message):
+    avg_len, next_date = get_cycle_predictions(message.from_user.id)
+    text = f"Ваша середня тривалість циклу: ~{avg_len} днів.\nОрієнтовний початок наступного циклу: **{next_date}**." if avg_len else "Даних для прогнозу ще недостатньо."
+    await message.answer(f"{text}\n\nОберіть дію:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🩸 Почався сьогодні", callback_data="cycle:start")], [InlineKeyboardButton(text="🩸 Закінчився сьогодні", callback_data="cycle:end")]]))
 
-@router.message(F.text == "📖 Переглянути історію")
-async def view_history(message: Message):
-    if not (history := get_user_history(message.from_user.id)): return await message.answer("Ваша історія записів порожня.")
-    response = "**Останні записи про здоров'я:**\n\n"
-    for record in history:
-        timestamp, mood, sleep, note, activity, stress, water = record
-        # ↓↓↓ ВИПРАВЛЕНО ТУТ (прибрали .%f) ↓↓↓
-        dt_object = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-        response += f"🗓️ **{dt_object.strftime('%d-%m-%y %H:%M')}**\n"
-        if note: response += f"   - 📝 Нотатка: {note}\n"
-        if mood: response += f"   - Настрій: {mood}\n"
-        if sleep: response += f"   - Сон: {sleep}\n"
-        if activity: response += f"   - Активність: {activity}\n"
-        if stress: response += f"   - Стрес: {stress}\n"
-        if water: response += f"   - Вода: {water}\n"
-        response += "---\n"
-    await message.answer(response)
+@router.callback_query(F.data == "cycle:start")
+async def process_cycle_start(callback: CallbackQuery):
+    start_new_cycle(callback.from_user.id), await callback.answer("✅ Новий цикл розпочато.", show_alert=True), await callback.message.delete()
 
-@router.message(F.text == "📝 Швидкий запис")
-async def ask_for_note(message: Message, state: FSMContext):
-    await state.set_state(Form.waiting_for_note)
-    await message.answer("Введіть вашу нотатку. Вона буде збережена з поточною датою і часом.", reply_markup=cancel_keyboard)
+@router.callback_query(F.data == "cycle:end")
+async def process_cycle_end(callback: CallbackQuery):
+    await callback.answer("✅ Поточний цикл завершено." if end_current_cycle(callback.from_user.id) else "❗️ У вас немає активного циклу.", show_alert=True), await callback.message.delete()
     
-    
+async def process_symptoms_generic(message: Message, state: FSMContext, openai_client: AsyncOpenAI, symptoms_text: str):
+    await message.answer("Аналізую інформацію... ⏳", reply_markup=get_main_menu_keyboard(message.from_user.id))
+    await state.update_data(initial_symptoms=symptoms_text)
+    profile_data = get_user_profile(message.from_user.id)
+    profile_text, emergency_text = "Дані профілю не вказані.", ""
+    if profile_data:
+        _, age, gender, weight, height, _, allergies, chronic, _ = profile_data
+        profile_text = f"Вік: {age or 'N/A'}. Стать: {gender or 'N/A'}. Вага: {weight or 'N/A'} кг. Зріст: {height or 'N/A'} см."
+        if allergies: emergency_text += f"Алергії пацієнта: {allergies}.\n"
+        if chronic: emergency_text += f"Хронічні захворювання пацієнта: {chronic}.\n"
+    system_prompt = ("Ти - досвідчений медичний AI-асистент. ... (ваш довгий промпт)") # Скорочено для читабельності
+    user_prompt = f"Профіль пацієнта: {profile_text}\n\n{emergency_text}Проаналізуй наступні скарги пацієнта: «{symptoms_text}»"
+    try:
+        completion = await openai_client.chat.completions.create(model="openai/gpt-4o-mini", messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])
+        response_text = completion.choices[0].message.content
+        save_openai_interaction(message.from_user.id, user_prompt, response_text)
+        if "?" in response_text and len(response_text) < 300:
+            await state.set_state(Form.answering_clarification)
+            await message.answer(response_text, reply_markup=cancel_keyboard)
+        else:
+            await message.answer(response_text), await state.clear()
+    except Exception as e:
+        logging.error(f"Помилка OpenAI: {e}"), await message.answer("На жаль, сталася помилка."), await state.clear()
 
-@router.message(Form.waiting_for_note)
-async def process_note(message: Message, state: FSMContext):
-    save_health_entry(user_id=message.from_user.id, note=message.text)
-    await state.clear()
-    await message.answer("✅ Нотатку збережено.", reply_markup=get_main_menu_keyboard(message.from_user.id))
-    await award_achievement(message.from_user.id, 'FIRST_NOTE', message)
+@router.message(Form.answering_clarification)
+async def process_clarification_answer(message: Message, state: FSMContext, openai_client: AsyncOpenAI):
+    user_answer, user_data = message.text, await state.get_data()
+    original_symptoms = user_data.get("initial_symptoms", "")
+    combined_text = f"{original_symptoms}\n\nУточнення від пацієнта: {user_answer}"
+    await process_symptoms_generic(message, state, openai_client, combined_text)
     
-# ... після хендлера process_note ...
-
 @router.message(F.text == ANALYZE_BTN_TEXT)
 async def start_symptom_checker(message: Message, state: FSMContext):
     await state.set_state(Form.symptom_checker_start)
-    await message.answer(
-        "Оберіть основний симптом або опишіть його:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🤯 Головний біль", callback_data="symptom:headache")],
-            [InlineKeyboardButton(text="🤒 Біль у горлі", callback_data="symptom:sore_throat")],
-            [InlineKeyboardButton(text="📝 Інше (описати текстом)", callback_data="symptom:other")]
-        ])
-    )
+    await message.answer("Оберіть основний симптом або опишіть його:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🤯 Головний біль", callback_data="symptom:headache")], [InlineKeyboardButton(text="🤒 Біль у горлі", callback_data="symptom:sore_throat")], [InlineKeyboardButton(text="📝 Інше (описати текстом)", callback_data="symptom:other")]]))
 
-# !!! ДІАГНОСТИЧНИЙ ОБРОБНИК - ВСТАВТЕ В САМИЙ КІНЕЦЬ ФАЙЛУ !!!
-@router.message()
-async def catch_all_unhandled_messages(message: Message, state: FSMContext):
-    """
-    Цей хендлер ловить ВСІ текстові повідомлення, які не були оброблені
-    іншими хендлерами, і показує поточний стан бота.
-    """
-    current_state = await state.get_state()
-    await message.answer(
-        f"<b>Діагностичне повідомлення:</b>\n\n"
-        f"Отримано текст: «<code>{message.text}</code>»\n"
-        f"Поточний стан бота: <b>{current_state}</b>"
-    )
+@router.message(Form.symptom_checker_start)
+async def process_other_symptom_text(message: Message, state: FSMContext, openai_client: AsyncOpenAI):
+    await process_symptoms_generic(message, state, openai_client, message.text)
     
+@router.callback_query(F.data == 'symptom:other', Form.symptom_checker_start)
+async def ask_for_other_symptom(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Будь ласка, опишіть ваші симптоми одним повідомленням.", reply_markup=cancel_keyboard), await callback.answer()
+
+@router.callback_query(F.data == 'symptom:sore_throat', Form.symptom_checker_start)
+async def process_sore_throat(callback: CallbackQuery, state: FSMContext, openai_client: AsyncOpenAI):
+    await callback.message.delete()
+    await process_symptoms_generic(callback.message, state, openai_client, "Основний симптом: біль у горлі."), await callback.answer()
+
+@router.callback_query(F.data == 'symptom:headache', Form.symptom_checker_start)
+async def ask_headache_type(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(main_symptom="Головний біль"), await state.set_state(Form.symptom_checker_headache_type)
+    await callback.message.edit_text("Який характер вашого головного болю?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Пульсуючий", callback_data="h_type:pulsing")], [InlineKeyboardButton(text="Стискаючий", callback_data="h_type:squeezing")], [InlineKeyboardButton(text="Постійний, тупий", callback_data="h_type:dull")]]))
+
+@router.callback_query(Form.symptom_checker_headache_type)
+async def ask_headache_location(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(headache_type=callback.data.split(':')[1]), await state.set_state(Form.symptom_checker_headache_location)
+    await callback.message.edit_text("Де саме болить найбільше? (напр., 'в скронях', 'потилиця')")
+
+@router.message(Form.symptom_checker_headache_location)
+async def ask_headache_additional(message: Message, state: FSMContext):
+    await state.update_data(headache_location=message.text), await state.set_state(Form.symptom_checker_headache_additional)
+    await message.answer("Чи є у вас інші симптоми? (напр., 'нудота')\nЯкщо ні, напишіть 'немає'.", reply_markup=cancel_keyboard)
+
+@router.message(Form.symptom_checker_headache_additional)
+async def process_headache_final(message: Message, state: FSMContext, openai_client: AsyncOpenAI):
+    await state.update_data(additional_symptoms=message.text)
+    user_data = await state.get_data()
+    prompt = (f"Основний симптом: {user_data.get('main_symptom')}.\n"
+              f"Характер болю: {user_data.get('headache_type')}.\n"
+              f"Локалізація: {user_data.get('headache_location')}.\n"
+              f"Додаткові симптоми: {user_data.get('additional_symptoms')}.")
+    await process_symptoms_generic(message, state, openai_client, prompt)
