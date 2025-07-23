@@ -17,6 +17,13 @@ logging.basicConfig(level=logging.INFO,
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
+# --- ПЕРЕВІРТЕ НАЯВНІСТЬ ЦИХ РЯДКІВ ---
+if BOT_TOKEN:
+    print(f"!!! CHECKING TOKEN: Використовую токен, що починається на '{BOT_TOKEN[:10]}' і закінчується на '{BOT_TOKEN[-4:]}'")
+else:
+    print("!!! CHECKING TOKEN: Змінна BOT_TOKEN не знайдена!")
+# --- КІНЕЦЬ ДІАГНОСТИЧНИХ РЯДКІВ ---
+
 
 # !!! ТИМЧАСОВО ДОДАЙТЕ ЦЕЙ РЯДОК ДЛЯ ПЕРЕВІРКИ (опціонально) !!!
 # Якщо хочете перевірити, що скрипт бачить ключ OpenRouter
