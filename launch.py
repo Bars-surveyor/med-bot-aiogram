@@ -14,7 +14,8 @@ from med_bot_aiogram import router, on_startup
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = "7580160474:AAH4uTUT-bdNkuVZwyNaU2jiU5Vp4m7NkE4"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 # --- ПЕРЕВІРТЕ НАЯВНІСТЬ ЦИХ РЯДКІВ ---
