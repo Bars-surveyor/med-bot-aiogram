@@ -512,5 +512,17 @@ async def start_symptom_checker(message: Message, state: FSMContext):
         ])
     )
 
-# ... тут починаються інші хендлери ...
+# !!! ДІАГНОСТИЧНИЙ ОБРОБНИК - ВСТАВТЕ В САМИЙ КІНЕЦЬ ФАЙЛУ !!!
+@router.message()
+async def catch_all_unhandled_messages(message: Message, state: FSMContext):
+    """
+    Цей хендлер ловить ВСІ текстові повідомлення, які не були оброблені
+    іншими хендлерами, і показує поточний стан бота.
+    """
+    current_state = await state.get_state()
+    await message.answer(
+        f"<b>Діагностичне повідомлення:</b>\n\n"
+        f"Отримано текст: «<code>{message.text}</code>»\n"
+        f"Поточний стан бота: <b>{current_state}</b>"
+    )
     
